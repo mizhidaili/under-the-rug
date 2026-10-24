@@ -85,6 +85,9 @@ final class Cloth {
     private var tetherRest: [Float] = []
     var grabTarget = SIMD3<Float>(repeating: 0)
     var isGrabbing: Bool { !grabbedIds.isEmpty }
+    private var movePositions: [SIMD3<Float>]?
+    private var moveOrigin = SIMD3<Float>(repeating: 0)
+    var isMovingWhole: Bool { movePositions != nil }
 
     init(width: Float, height: Float, columns: Int) {
         nx = columns
@@ -160,6 +163,7 @@ final class Cloth {
     // MARK: раскладка
 
     func layout(center: SIMD2<Float>, angle: Float, drop: Float) {
+        endWholeMove()
         endGrab()
         let ca = cos(angle), sa = sin(angle)
         for j in 0..<ny {
@@ -204,7 +208,37 @@ final class Cloth {
 
     // MARK: захват
 
+    // Preserve every vertex offset while carrying the entire rug. Physics resumes
+    // on release, with no drag velocity that could fling the rug off screen.
+    func beginWholeMove(from origin: SIMD3<Float>) {
+        endWholeMove()
+        endGrab()
+        moveOrigin = origin
+        movePositions = Array(UnsafeBufferPointer(start: pos, count: count))
+        for i in 0..<count { prev[i] = pos[i]; vel[i] = .zero }
+        maxSpeed = 0
+    }
+
+    func moveWhole(to target: SIMD3<Float>) {
+        guard let original = movePositions else { return }
+        let delta = target - moveOrigin
+        for i in 0..<count {
+            pos[i] = original[i] + delta
+            prev[i] = pos[i]
+            vel[i] = .zero
+        }
+        maxSpeed = 0
+    }
+
+    func endWholeMove() {
+        guard movePositions != nil else { return }
+        movePositions = nil
+        for i in 0..<count { prev[i] = pos[i]; vel[i] = .zero }
+        maxSpeed = 1000
+    }
+
     func beginGrab(vertex v: Int, target: SIMD3<Float>) {
+        endWholeMove()
         endGrab()
         let vi = v % nx, vj = v / nx
         let center = pos[v]
@@ -239,6 +273,7 @@ final class Cloth {
     // MARK: шаг симуляции
 
     func step(dt frameDt: Float) {
+        guard !isMovingWhole else { return }
         let n = params.substeps
         let sdt = frameDt / Float(n)
         let maxVel = 0.2 * thickness / sdt

@@ -54,7 +54,7 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text(L("Тяни ковер мышью за любой край. Прокрутка над ковром поворачивает его, правый клик по ковру открывает короткое меню. Окно можно закрыть, ковер останется на столе, а настройки откроются снова из «Программ» или из значка в строке меню.", "Grab the rug by any edge and drag. Scroll over the rug to rotate it, right-click it for a quick menu. You can close this window, the rug stays on the desktop, and settings open again from Applications or the menu bar icon."))
+            Text(L("Тяни ковер мышью за любой край. Удерживай ⌥ Option перед перетаскиванием, чтобы поднять и перенести весь ковер, сохраняя его форму. Прокрутка над ковром поворачивает его, правый клик по ковру открывает короткое меню. Окно можно закрыть, ковер останется на столе, а настройки откроются снова из «Программ» или из значка в строке меню.", "Grab the rug by any edge and drag. Hold ⌥ Option before dragging to lift and move the whole rug while preserving its shape. Scroll over the rug to rotate it, right-click it for a quick menu. You can close this window, the rug stays on the desktop, and settings open again from Applications or the menu bar icon."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

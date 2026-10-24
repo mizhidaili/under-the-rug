@@ -18,7 +18,7 @@ final class RugView: MTKView {
         return SIMD2(Float(p.x), Float(p.y))
     }
 
-    override func mouseDown(with e: NSEvent) { controller?.mouseDown(pt(e)) }
+    override func mouseDown(with e: NSEvent) { controller?.mouseDown(pt(e), wholeRug: e.modifierFlags.contains(.option)) }
     override func mouseDragged(with e: NSEvent) { controller?.mouseDragged(pt(e)) }
     override func mouseUp(with e: NSEvent) { controller?.mouseUp() }
     override func scrollWheel(with e: NSEvent) { controller?.scroll(e) }
@@ -39,6 +39,7 @@ final class RugController: NSObject, MTKViewDelegate {
     private var scanTimer: Timer?
     private var desktopWatch: DispatchSourceFileSystemObject?
     private var dragging = false
+    private var wholeMovePlaneZ: Float?
     private var calmFrames = 0
     private var stepTime: Double = 0
     private var frames = 0
@@ -186,7 +187,7 @@ final class RugController: NSObject, MTKViewDelegate {
         }
         renderer.draw(cloth: cloth, camera: camera, in: view)
 
-        if !cloth.isGrabbing && !fieldMoving && cloth.maxSpeed < 3 {
+        if !cloth.isGrabbing && !cloth.isMovingWhole && !fieldMoving && cloth.maxSpeed < 3 {
             calmFrames += 1
         } else {
             calmFrames = 0
@@ -209,27 +210,42 @@ final class RugController: NSObject, MTKViewDelegate {
         if window.ignoresMouseEvents == hit { window.ignoresMouseEvents = !hit }
     }
 
-    func mouseDown(_ s: SIMD2<Float>) {
+    func mouseDown(_ s: SIMD2<Float>, wholeRug: Bool = false) {
         guard let (v, z) = cloth.pick(s, needVertex: true) else { return }
         dragging = true
-        cloth.beginGrab(vertex: v, target: camera.unproject(s, z: max(z, 0) + liftHeight))
+        if wholeRug {
+            let planeZ = max(z, 0) + 48
+            wholeMovePlaneZ = planeZ
+            cloth.beginWholeMove(from: camera.unproject(s, z: z))
+            cloth.moveWhole(to: camera.unproject(s, z: planeZ))
+        } else {
+            wholeMovePlaneZ = nil
+            cloth.beginGrab(vertex: v, target: camera.unproject(s, z: max(z, 0) + liftHeight))
+        }
         wake()
     }
 
     func mouseDragged(_ s: SIMD2<Float>) {
         guard dragging else { return }
-        cloth.grabTarget = camera.unproject(s, z: cloth.grabTarget.z)
+        if let z = wholeMovePlaneZ {
+            cloth.moveWhole(to: camera.unproject(s, z: z))
+        } else {
+            cloth.grabTarget = camera.unproject(s, z: cloth.grabTarget.z)
+        }
         wake()
     }
 
     func mouseUp() {
         guard dragging else { return }
         dragging = false
+        cloth.endWholeMove()
+        wholeMovePlaneZ = nil
         cloth.endGrab()
         wake()
     }
 
     func scroll(_ e: NSEvent) {
+        guard !cloth.isMovingWhole else { return }
         let d = Float(e.scrollingDeltaY) * (e.hasPreciseScrollingDeltas ? 0.004 : 0.05)
         if d == 0 { return }
         cloth.rotate(by: d)
