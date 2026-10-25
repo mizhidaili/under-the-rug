@@ -24,7 +24,7 @@ macOS 14 or later, Apple Silicon or Intel.
 ## Use
 
 - Drag the rug by any edge. Lift a corner, fold it over, flip the whole thing.
-- Hold **⌥ Option** before dragging anywhere on the rug to lift and move the whole rug while preserving its current shape and rotation. Release the mouse to let it fall back onto the desktop.
+- Hold **⌥ Option** and click the rug to unfold it to its full configured size and lift it into editing mode. Release the mouse while keeping Option held: the rug stays selected. Drag the rug to move it, a corner point to resize and rotate together around the rug’s center. Pull toward or away from the center to resize proportionally, and sweep around it to turn through any angle. Size uses the same range as the settings slider and is saved when you finish. The editing preview keeps its landing size and position; lifting does not magnify it. Release Option to let it fall back onto the desktop.
 - Scroll over the rug to rotate it. Right-click it for a quick menu.
 - The settings window opens on launch and whenever you open Rug again from Applications or Spotlight. Pick a rug, a floor wallpaper and the size there, or quit the app.
 - **Sweep under the rug** piles all desktop icons in a heap under the rug and drops the rug on top. **Put them back** restores the old layout. This needs Finder to stop arranging icons by itself. Right-click the desktop, uncheck **Use Stacks** and set **Sort By** to **None**. Rug asks Finder for permission (Automation) the first time.
@@ -54,7 +54,7 @@ xcode-select --install
 
 `Rug --demo <folder> [rug image]` runs the scene offscreen and saves frames, handy for tuning the physics without touching your desktop. `RUG_SCENARIO=flip`, `curl` or `readme` pick other scenes, `RUG_COLS`, `RUG_BEND`, `RUG_G` and friends override cloth parameters (see `ClothParams` in `Sources/Cloth.swift`).
 
-Run `./Tests/run-whole-move.sh` to check whole-rug movement, cursor anchoring, release physics, and transitions to normal grabbing without opening a window.
+Run `./Tests/run-whole-move.sh` to check unfolding, movement, centered scaling/rotation, cursor anchoring, true-size preview, and release physics without opening a window. `./Tests/render-edit-preview.sh` checks the actual Metal-rendered footprint during lift and landing, then saves an editing preview to `build/tests/edit-preview.png`.
 
 ## How it works
 
@@ -91,7 +91,7 @@ MIT. Made by Artem from the Telegram channel [Силиконовый мешок]
 ### Как пользоваться
 
 - Тяни ковер мышью за любой край. Можно поднять угол, загнуть, перевернуть целиком.
-- Удерживай **⌥ Option** перед перетаскиванием любой точки ковра, чтобы поднять и перенести его целиком, сохраняя текущую форму и угол поворота. Отпусти кнопку мыши, чтобы ковер снова упал на рабочий стол.
+- Удерживай **⌥ Option** и нажми на ковер: он расправится до выбранного размера и поднимется. Кнопку мыши можно отпустить, удерживая Option. Тяни ковер для перемещения, угловую точку для одновременного изменения размера и поворота вокруг центра ковра. Движение к центру или от него меняет размер пропорционально, а движение вокруг него поворачивает ковер на любой угол. Диапазон размеров совпадает с ползунком в настройках; выбранный размер сохраняется. При редактировании ковер сохраняет размер и положение, которые будут после приземления: подъем не увеличивает его. Отпусти Option, чтобы ковер упал обратно на рабочий стол.
 - Прокрутка над ковром поворачивает его, правый клик открывает короткое меню.
 - Окно настроек открывается при запуске и каждый раз, когда снова открываешь Ковер из «Программ» или Spotlight. Там выбор ковра, пола на обоях, размер и выход.
 - **«Замести под ковер»** сваливает все иконки в кучу под ковром и роняет ковер сверху. **«Разложить обратно»** возвращает их на места. Для этого Finder не должен раскладывать иконки сам. Правый клик по рабочему столу, снять **«Использовать стопки»**, в **«Сортировать по»** выбрать **«Нет»**. В первый раз Ковер попросит разрешение управлять Finder.

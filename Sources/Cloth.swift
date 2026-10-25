@@ -42,16 +42,17 @@ struct ClothParams {
 
 struct Camera {
     var size: SIMD2<Float>
+    var projectionLift: Float = 0
     var D: Float { max(size.x, size.y) * 1.15 }
     var center: SIMD2<Float> { size * 0.5 }
 
     func project(_ p: SIMD3<Float>) -> SIMD2<Float> {
-        let w = (D - p.z) / D
+        let w = (D - p.z + projectionLift) / D
         return center + (SIMD2(p.x, p.y) - center) / w
     }
 
     func unproject(_ s: SIMD2<Float>, z: Float) -> SIMD3<Float> {
-        let w = (D - z) / D
+        let w = (D - z + projectionLift) / D
         let xy = center + (s - center) * w
         return SIMD3(xy.x, xy.y, z)
     }
@@ -59,7 +60,7 @@ struct Camera {
 
 final class Cloth {
     let nx: Int, ny: Int, count: Int
-    let width: Float, height: Float, spacing: Float, thickness: Float
+    private(set) var width: Float, height: Float, spacing: Float, thickness: Float
     var params = ClothParams.tuned
 
     let pos: UnsafeMutablePointer<SIMD3<Float>>
@@ -72,7 +73,7 @@ final class Cloth {
     private var cons: [Con] = []
     private(set) var indices: [UInt32] = []
     private(set) var uvs: [SIMD2<Float>] = []
-    private let hash: SpatialHash
+    private var hash: SpatialHash
     var ground: HeightField?
 
     var bboxMin = SIMD2<Float>(repeating: 0)
@@ -85,9 +86,18 @@ final class Cloth {
     private var tetherRest: [Float] = []
     var grabTarget = SIMD3<Float>(repeating: 0)
     var isGrabbing: Bool { !grabbedIds.isEmpty }
-    private var movePositions: [SIMD3<Float>]?
-    private var moveOrigin = SIMD3<Float>(repeating: 0)
-    var isMovingWhole: Bool { movePositions != nil }
+    private(set) var wholeMoveCenter: SIMD3<Float>?
+    private var wholeMoveAngle: Float = 0
+    // Remove only the common editing lift from perspective, leaving physical
+    // height intact for gravity, collision, depth and shadows.
+    private(set) var projectionLift: Float = 0
+    var isMovingWhole: Bool { wholeMoveCenter != nil }
+
+    func presentationCamera(_ camera: Camera) -> Camera {
+        var result = camera
+        result.projectionLift = projectionLift
+        return result
+    }
 
     init(width: Float, height: Float, columns: Int) {
         nx = columns
@@ -165,6 +175,7 @@ final class Cloth {
     func layout(center: SIMD2<Float>, angle: Float, drop: Float) {
         endWholeMove()
         endGrab()
+        projectionLift = 0
         let ca = cos(angle), sa = sin(angle)
         for j in 0..<ny {
             for i in 0..<nx {
@@ -190,6 +201,11 @@ final class Cloth {
     }
 
     func rotate(by angle: Float) {
+        if isMovingWhole {
+            wholeMoveAngle = (wholeMoveAngle + angle).truncatingRemainder(dividingBy: 2 * .pi)
+            applyWholePose()
+            return
+        }
         let c = pose().center
         let ca = cos(angle), sa = sin(angle)
         func rot(_ p: SIMD3<Float>) -> SIMD3<Float> {
@@ -208,22 +224,51 @@ final class Cloth {
 
     // MARK: захват
 
-    // Preserve every vertex offset while carrying the entire rug. Physics resumes
-    // on release, with no drag velocity that could fling the rug off screen.
-    func beginWholeMove(from origin: SIMD3<Float>) {
+    // Unfold to the rest mesh, keeping the current center, orientation and size.
+    // Rebuild from rest on each edit so repeated rotations cannot stretch the rug.
+    func beginWholeMove(height: Float) {
+        let p = pose()
         endWholeMove()
         endGrab()
-        moveOrigin = origin
-        movePositions = Array(UnsafeBufferPointer(start: pos, count: count))
-        for i in 0..<count { prev[i] = pos[i]; vel[i] = .zero }
-        maxSpeed = 0
+        wholeMoveCenter = SIMD3(p.center.x, p.center.y, height)
+        wholeMoveAngle = p.angle
+        projectionLift = max(0, height)
+        applyWholePose()
     }
 
-    func moveWhole(to target: SIMD3<Float>) {
-        guard let original = movePositions else { return }
-        let delta = target - moveOrigin
+    func moveWhole(to center: SIMD3<Float>) {
+        guard isMovingWhole else { return }
+        wholeMoveCenter = center
+        applyWholePose()
+    }
+
+    func transformWhole(width newWidth: Float, center: SIMD3<Float>, angle: Float) {
+        guard isMovingWhole, newWidth.isFinite, newWidth > 0, angle.isFinite else { return }
+        width = newWidth
+        spacing = width / Float(nx - 1)
+        height = spacing * Float(ny - 1)
+        thickness = spacing * 1.1
+        for j in 0..<ny {
+            for i in 0..<nx {
+                rest[idx(i, j)] = SIMD3(Float(i) * spacing - width / 2, Float(j) * spacing - height / 2, 0)
+            }
+        }
+        // Update the simulation's rest lengths too; otherwise the resized rug
+        // would spring back to its old dimensions as soon as it is released.
+        for i in cons.indices {
+            cons[i].rest = simd_distance(rest[Int(cons[i].a)], rest[Int(cons[i].b)])
+        }
+        wholeMoveCenter = center
+        wholeMoveAngle = angle.truncatingRemainder(dividingBy: 2 * .pi)
+        applyWholePose()
+    }
+
+    private func applyWholePose() {
+        guard let center = wholeMoveCenter else { return }
+        let ca = cos(wholeMoveAngle), sa = sin(wholeMoveAngle)
         for i in 0..<count {
-            pos[i] = original[i] + delta
+            let r = rest[i]
+            pos[i] = center + SIMD3(r.x * ca - r.y * sa, r.x * sa + r.y * ca, 0)
             prev[i] = pos[i]
             vel[i] = .zero
         }
@@ -231,8 +276,9 @@ final class Cloth {
     }
 
     func endWholeMove() {
-        guard movePositions != nil else { return }
-        movePositions = nil
+        guard isMovingWhole else { return }
+        wholeMoveCenter = nil
+        if hash.spacing != thickness { hash = SpatialHash(spacing: thickness, maxObjects: count) }
         for i in 0..<count { prev[i] = pos[i]; vel[i] = .zero }
         maxSpeed = 1000
     }
@@ -299,6 +345,14 @@ final class Cloth {
             // на всякий случай: если решатель разошелся, кладем ковер заново
             let c = SIMD2<Float>(prev[count / 2].x, prev[count / 2].y)
             layout(center: c.x.isFinite && c.y.isFinite ? c : SIMD2(width, height), angle: 0, drop: 60)
+        }
+        if projectionLift > 0 {
+            // Keep the release frame identical to the preview. As the rug falls,
+            // remove the remaining common height until normal perspective resumes
+            // at the floor. Raised folds and icon bumps still retain their depth.
+            var lowest = projectionLift
+            for i in 0..<count { lowest = min(lowest, pos[i].z) }
+            projectionLift = max(0, lowest)
         }
     }
 
@@ -422,6 +476,7 @@ final class Cloth {
     // MARK: производные для рендера и мыши
 
     func updateDerived(_ cam: Camera) {
+        let cam = presentationCamera(cam)
         for i in 0..<count { nrm[i] = .zero }
         indices.withUnsafeBufferPointer { ib in
             var t = 0
